@@ -1,0 +1,104 @@
+# Course Project - Practical Machine Learning
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Study Summary
+We have studied data collected during barbell lift  in order to build a prediction model to the way the exercise was performed.
+
+Data source can be found at  http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har 
+
+Data was downloaded using the links below, provided by course staff:
+- training : https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+- test : https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+Initial exploratory and cleaning process steps, summarized below, allowed a reduction from 160 to 54 columns.
+
+4 tentative modeling methods were tried:
+- rf    => Random Forest
+- gbm   =>Generalized Boosting
+- lda   => Linear Discriminant Analysis
+- rpart => Recursive Partitioning
+
+Model fitting was performed using caret package train function. Cross validation was performed with 5 folds split in each of them. 
+
+The results were analyzed and Random Forest presented the best accuracy values, both for observed in-sample and projected out-of-sample, so it was chosen to predict using test set observations.
+
+##
+## Loading and cleaning data
+##
+```{r}
+## Environment cleaning
+rm(list=ls())
+## Loading data
+dir <- "C:\\Users\\Marcelo\\Dropbox\\Pessoais\\Curso Data Science\\Curso 8 - Practical Machine Learning\\Week 4\\Course Project\\"
+train <- read.csv(paste(dir,"pml-training.csv",sep=""),stringsAsFactors=FALSE)
+test <- read.csv(paste(dir,"pml-testing.csv",sep=""),stringsAsFactors=FALSE)
+## Data preprocessing and cleaning
+##
+library(caret)
+## Comparing column names in both sets
+names(train)[which( names(train) != names(test) )]
+names(test)[which( names(train) != names(test) )]
+## Names are identical except for next column => the one we intend to predict
+##
+## Eliminating identifier columns that don´t represent measures
+train <- train[,-c(1:5)]
+test <- test[,-c(1:5)]
+## Eliminating columns with too many NA values (30% or more)
+keep <- sapply(1:ncol(train),function(x) { ( sum(is.na(train[,x]))/nrow(train))<0.7})
+train <- subset(train,select=names(train)[keep])
+test <- subset(test,select=names(test)[keep])
+## Eliminating columns with near zero variance
+nzero <- nearZeroVar(train)
+train <- train[,-nzero]
+test <- test[,-nzero]
+## Checking names again
+names(train)[which( names(train) != names(test) )]
+names(test)[which( names(train) != names(test) )]
+## Names are the same so we didn´t lost anything
+```
+
+## Model Fitting
+```{r}
+## Turning outcome into a factor
+train$classe <- as.factor(train$classe)
+## Cross validarion setting
+cv_splits <- trainControl(method = "cv", number = 5)
+## Fitting candidate models
+cv_fit_rf <- train(classe ~ ., data = train, method = "rf", ntree=50, trControl = cv_splits)
+cv_fit_gbm <- train(classe ~ ., data = train, method = "gbm", verbose=FALSE, trControl= cv_splits)
+cv_fit_lda <- train(classe ~ ., data = train, method = "lda", trControl= cv_splits)
+cv_fit_rpart <- train(classe ~ ., data = train, method = "rpart", trControl= cv_splits)
+## Checking results
+cv_fit_rf
+cv_fit_gbm
+cv_fit_lda
+cv_fit_rpart
+## Gathering results and Plotting accuracy
+in_accuracy <- c(sum(train$classe == predict(cv_fit_rf,train))/nrow(train),
+              sum(train$classe == predict(cv_fit_gbm,train))/nrow(train),
+              sum(train$classe == predict(cv_fit_lda,train))/nrow(train),
+              sum(train$classe == predict(cv_fit_rpart,train))/nrow(train))
+out_accuracy <- c(cv_fit_rf$results[1,2],
+                  cv_fit_gbm$results[9,5],
+                  cv_fit_lda$results[1,2],
+                  cv_fit_rpart$results[1,2] )
+method <- rep(c("rf","gbm","lda","rpart"),2)
+scope <- append(rep("in",4), rep("out",4))
+accuracy <- append(in_accuracy,out_accuracy)
+df <- data.frame( method, scope, accuracy)
+g <- ggplot(data=df, aes(x=method, y=accuracy, fill=scope)) + geom_bar(stat="identity",position=position_dodge(),width=0.5) + scale_x_discrete(limits=c("rf","gbm","lda","rpart"))
+g <- g + ggtitle("Alternative Models Accuracy") +   xlab("Method") + ylab("Accuracy")
+g
+```
+## Predicting test set values
+### As was seen in the model fitting step, Random Forest presented the best results in both situations so we will use it to do the prediction
+```{r}
+predictions <- predict(cv_fit_rf,test)
+predictions
+```
+
+
+
